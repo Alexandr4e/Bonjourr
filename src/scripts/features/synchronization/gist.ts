@@ -13,7 +13,7 @@ type AutoPull =
     | { status: 'skipped' }
     | { status: 'baseline'; updatedAt: string }
     | { status: 'unchanged'; updatedAt: string }
-    | { status: 'changed'; updatedAt: string; data: Sync }
+    | { status: 'changed'; updatedAt: string; data: unknown }
 
 interface GistItem {
     url: string

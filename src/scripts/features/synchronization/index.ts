@@ -1,4 +1,5 @@
 import { autoPullGist, findGistId, isGistTokenValid, retrieveGistWithDate, sendGist, setGistStatus } from './gist.ts'
+import { sensitiveChanges, showGistBanner, validateExport } from './autopull.ts'
 import { isDistantUrlValid, receiveFromURL } from './url.ts'
 import { onSettingsLoad } from '../../utils/onsettingsload.ts'
 import { networkForm } from '../../shared/form.ts'
@@ -6,6 +7,7 @@ import { fadeOut } from '../../shared/dom.ts'
 import { storage } from '../../storage.ts'
 
 import type { Local, SyncType } from '../../../types/local.ts'
+import type { Sync } from '../../../types/sync.ts'
 
 interface SyncUpdate {
     type?: string
@@ -49,9 +51,33 @@ async function gistAutoPull(local: Local): Promise<void> {
     }
 
     if (result.status === 'changed') {
-        await storage.sync.set(result.data)
-        storage.local.set({ gistSyncedAt: result.updatedAt })
-        fadeOut()
+        const error = validateExport(result.data)
+
+        if (error) {
+            console.warn(`Gist auto pull ignored, not a valid Bonjourr export: ${error}`)
+            return
+        }
+
+        const data = result.data as Sync
+        const updatedAt = result.updatedAt
+        const current = await storage.sync.get()
+        const changes = sensitiveChanges(current, data)
+
+        const apply = async () => {
+            await storage.sync.set(data)
+            storage.local.set({ gistSyncedAt: updatedAt })
+            fadeOut()
+        }
+
+        const ignore = () => {
+            storage.local.set({ gistSyncedAt: updatedAt })
+        }
+
+        if (changes.length === 0) {
+            apply()
+        } else {
+            showGistBanner(changes, apply, ignore)
+        }
     }
 }
 
