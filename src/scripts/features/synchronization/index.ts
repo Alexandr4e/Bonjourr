@@ -1,4 +1,4 @@
-import { findGistId, isGistTokenValid, retrieveGist, sendGist, setGistStatus } from './gist.ts'
+import { autoPullGist, findGistId, isGistTokenValid, retrieveGistWithDate, sendGist, setGistStatus } from './gist.ts'
 import { isDistantUrlValid, receiveFromURL } from './url.ts'
 import { onSettingsLoad } from '../../utils/onsettingsload.ts'
 import { networkForm } from '../../shared/form.ts'
@@ -26,10 +26,32 @@ export function synchronization(init?: Local, update?: SyncUpdate): void {
         onSettingsLoad(() => {
             toggleSyncSettingsOption(init)
         })
+
+        gistAutoPull(init)
     }
 
     if (update) {
         updateSyncOption(update)
+    }
+}
+
+async function gistAutoPull(local: Local): Promise<void> {
+    const result = await autoPullGist(local)
+
+    if (result.status === 'skipped') {
+        return
+    }
+
+    storage.local.set({ gistCheckedAt: Date.now() })
+
+    if (result.status === 'baseline') {
+        storage.local.set({ gistSyncedAt: result.updatedAt })
+    }
+
+    if (result.status === 'changed') {
+        await storage.sync.set(result.data)
+        storage.local.set({ gistSyncedAt: result.updatedAt })
+        fadeOut()
     }
 }
 
@@ -44,8 +66,9 @@ async function updateSyncOption(update: SyncUpdate): Promise<void> {
             try {
                 const id = local.gistId ?? ''
                 const token = local.gistToken ?? ''
-                const update = await retrieveGist(token, id)
-                storage.sync.set(update)
+                const { data, updatedAt } = await retrieveGistWithDate(token, id)
+                storage.sync.set(data)
+                storage.local.set({ gistSyncedAt: updatedAt })
                 fadeOut()
             } catch (err) {
                 gistsyncform.warn(err as string)
@@ -71,12 +94,13 @@ async function updateSyncOption(update: SyncUpdate): Promise<void> {
 
             try {
                 const token = local.gistToken ?? ''
-                const id = await sendGist(token, local.gistId, data)
+                const sent = await sendGist(token, local.gistId, data)
 
                 gistsyncform.accept()
 
-                local.gistId = id
-                storage.local.set({ gistId: id })
+                local.gistId = sent.id
+                local.gistSyncedAt = sent.updatedAt
+                storage.local.set({ gistId: sent.id, gistSyncedAt: sent.updatedAt })
                 toggleSyncSettingsOption(local)
             } catch (error) {
                 gistsyncform.warn(error as string)
@@ -89,6 +113,8 @@ async function updateSyncOption(update: SyncUpdate): Promise<void> {
         local.gistId = ''
         storage.local.remove('gistToken')
         storage.local.remove('gistId')
+        storage.local.remove('gistSyncedAt')
+        storage.local.remove('gistCheckedAt')
         gistsyncform.accept()
         toggleSyncSettingsOption(local)
         return

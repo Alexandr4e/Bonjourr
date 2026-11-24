@@ -16,6 +16,8 @@ export interface Local {
     // Sync
     gistId?: string
     gistToken?: string
+    gistSyncedAt?: string // gist `updated_at` last applied (Get) or sent (Send) from this browser
+    gistCheckedAt?: number // timestamp of last automatic check on startup
     distantUrl?: string
     pastebinToken?: string
     syncType?: SyncType
